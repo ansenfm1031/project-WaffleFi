@@ -1,6 +1,7 @@
 # Build output
 Debug/
 Release/
+build/
 *.o
 *.d
 *.elf
