@@ -6,9 +6,16 @@ TARGET = wifi_qt
 
 ROS_ROOT = /opt/ros/humble
 
+INCLUDEPATH += $$ROS_ROOT/include
+INCLUDEPATH += $$ROS_ROOT/include/rclcpp_action
+INCLUDEPATH += $$ROS_ROOT/include/rcl_action
+INCLUDEPATH += $$ROS_ROOT/include/action_msgs
+INCLUDEPATH += $$ROS_ROOT/include/unique_identifier_msgs
+INCLUDEPATH += $$ROS_ROOT/include/nav2_msgs
 INCLUDEPATH += $$PWD/3rdparty/QHeatMap/include
 SOURCES += $$PWD/3rdparty/QHeatMap/lib/*.cpp
-HEADERS += $$PWD/3rdparty/QHeatMap/include/*.h
+HEADERS += $$PWD/3rdparty/QHeatMap/include/*.h \
+
 
 INCLUDEPATH += \
     $$ROS_ROOT/include \
@@ -21,6 +28,9 @@ INCLUDEPATH += \
     $$ROS_ROOT/include/rmw \
     $$ROS_ROOT/include/rcutils \
     $$ROS_ROOT/include/rcpputils \
+    $$ROS_ROOT/include/rclcpp_action \
+    $$ROS_ROOT/include/rcl_action \
+    $$ROS_ROOT/include/rclcpp_action/rclcpp_action \
     $$ROS_ROOT/include/rcl_yaml_param_parser \
     $$ROS_ROOT/include/tracetools \
     $$ROS_ROOT/include/libstatistics_collector \
@@ -28,8 +38,11 @@ INCLUDEPATH += \
     $$ROS_ROOT/include/rosidl_typesupport_interface \
     $$ROS_ROOT/include/builtin_interfaces \
     $$ROS_ROOT/include/rcl_interfaces \
+    $$ROS_ROOT/include/action_msgs \
     $$ROS_ROOT/include/nav_msgs \
     $$ROS_ROOT/include/std_msgs \
+    $$ROS_ROOT/include/msgs \
+    $$ROS_ROOT/include/nav2_msgs \
     $$ROS_ROOT/include/geometry_msgs \
     $$ROS_ROOT/include/rosidl_runtime_cpp \
     $$ROS_ROOT/include/rosidl_runtime_c \
@@ -44,6 +57,8 @@ QMAKE_LFLAGS += -Wl,-rpath,$$ROS_ROOT/lib
 
 LIBS += \
     -L$$ROS_ROOT/lib \
+    -lrclcpp_action \
+    -lrcl_action \
     -lrclcpp \
     -lstatistics_collector \
     -ltf2_ros \
@@ -52,6 +67,7 @@ LIBS += \
     -lgeometry_msgs__rosidl_typesupport_cpp \
     -lstatistics_msgs__rosidl_typesupport_cpp \
     -lstatistics_msgs__rosidl_typesupport_c \
+    -lnav2_msgs__rosidl_typesupport_cpp \
     -lstatistics_msgs__rosidl_typesupport_introspection_cpp \
     -lrmw_fastrtps_cpp \
     -lrmw_fastrtps_shared_cpp \
@@ -70,6 +86,18 @@ LIBS += \
     -lament_index_cpp \
     -lrmw
 
+LIBS += \
+    -ltf2 \
+    -ltf2_ros
+
+LIBS += \
+    -lgeometry_msgs__rosidl_typesupport_cpp \
+    -lnav_msgs__rosidl_typesupport_cpp
+
+LIBS += \
+    -lrclcpp_action \
+    -lnav2_msgs__rosidl_typesupport_cpp \
+    -laction_msgs__rosidl_typesupport_cpp
 
 # LIBS += \
 #     -L$$ROS_ROOT/lib \
@@ -116,29 +144,3 @@ FORMS += \
 
 
 
-
-
-# QT       += core gui
-
-# greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
-
-# CONFIG += c++17
-
-# # You can make your code fail to compile if it uses deprecated APIs.
-# # In order to do so, uncomment the following line.
-# #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
-
-# SOURCES += \
-#     main.cpp \
-#     mainwindow.cpp
-
-# HEADERS += \
-#     mainwindow.h
-
-# FORMS += \
-#     mainwindow.ui
-
-# # Default rules for deployment.
-# qnx: target.path = /tmp/$${TARGET}/bin
-# else: unix:!android: target.path = /opt/$${TARGET}/bin
-# !isEmpty(target.path): INSTALLS += target

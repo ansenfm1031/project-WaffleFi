@@ -66,6 +66,12 @@ private:
     void initHeatmapLayer();            // 지도 로드 후 1회 호출
     bool meterToPixel(double x, double y, int& px, int& py) const;
     int  rssiToAddCount(float rssi) const;  // rssi -> addPoint 반복 횟수(강도)
+    void refitView();
+    void onMapClicked(const QPointF& scenePos);
+    bool pixelToMap(int px, int py, double& x_m, double& y_m) const;
+    bool eventFilter(QObject* obj, QEvent* ev);
+
+
 
 private:
     Ui::MainWindow *ui;

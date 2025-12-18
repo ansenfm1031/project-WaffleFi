@@ -13,6 +13,7 @@
 #include <cmath>
 #include <QTimer>
 #include <QResizeEvent>
+#include <QMouseEvent>
 #define HEAT_ADD_POINT(hm, x, y, v)  (hm)->addPoint((x), (y), (v))
 
 
@@ -38,11 +39,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     scene = new QGraphicsScene(this);
     ui->graphicsView->setScene(scene);
+    ui->graphicsView->viewport()->installEventFilter(this);
 
     mapItem = scene->addPixmap(QPixmap());
     mapItem->setZValue(0);
 
-    // 로봇 마커(원)
+    // 로봇 마커(원), 수정 예정
     robotItem = scene->addEllipse(-5, -5, 10, 10, QPen(Qt::red), QBrush(Qt::red));
     robotItem->setZValue(10);
 
@@ -56,6 +58,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(rosThread, &RosWorker::statusChanged, this, &MainWindow::onRosStatus);
     connect(rosThread, &RosWorker::robotPose, this, &MainWindow::onRobotPose);
     connect(rosThread, &RosWorker::sample, this, &MainWindow::onSample);
+    connect(rosThread, &RosWorker::goalStatus,
+            this, [](const QString& s){
+                qDebug() << s;
+            });
 
 
     rosThread->start();
@@ -144,7 +150,7 @@ QPointF MainWindow::mapMeterToPixel(double x, double y) const
     const double res = mapMeta_.resolution;
     const double ox  = mapMeta_.origin_x;
     const double oy  = mapMeta_.origin_y;
-    const double th  = mapMeta_.origin_yaw; // rad
+    const double th  = mapMeta_.origin_yaw;
 
     // 월드좌표를 origin 기준으로 평행이동
     const double dx = x - ox;
@@ -195,7 +201,7 @@ void MainWindow::applyViewTransform()
     t.rotate(-90.0);
     ui->graphicsView->setTransform(t);
 
-    // 2) 그 다음 현재 화면 크기에 맞게 fit (※ fit은 transform을 덮어쓸 수 있어 순서 중요)
+    // 2) 그 다음 현재 화면 크기에 맞게 fit (※ fit은 transform을 덮어쓸 수 있어서 순서 중요함)
     ui->graphicsView->fitInView(scene->sceneRect(), Qt::KeepAspectRatio);
 
     // 3) fit 이후 회전이 풀리는 Qt 버전도 있어서 한 번 더 강제
@@ -299,3 +305,68 @@ void MainWindow::flushHeatmap()
     // scene에 반영
     heatItem_->setPixmap(QPixmap::fromImage(heatCanvas_));
 }
+
+bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
+{
+    if (obj == ui->graphicsView->viewport() &&
+        ev->type() == QEvent::MouseButtonPress) {
+
+        auto* me = static_cast<QMouseEvent*>(ev);
+
+        // view → scene 좌표 변환
+        QPointF scenePos = ui->graphicsView->mapToScene(me->pos());
+
+        onMapClicked(scenePos);
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::onMapClicked(const QPointF& scenePos)
+{
+    const int px = static_cast<int>(scenePos.x());
+    const int py = static_cast<int>(scenePos.y());
+
+    double x_m = 0.0;
+    double y_m = 0.0;
+
+    if (!pixelToMap(px, py, x_m, y_m)) {
+        qDebug() << "Clicked outside map";
+        return;
+    }
+
+    rosThread->requestNavigateTo(x_m, y_m, 0.0);
+
+    qDebug() << "NavigateTo:" << x_m << y_m;
+}
+
+bool MainWindow::pixelToMap(int px, int py, double& x_m, double& y_m) const
+{
+    if (mapImageSize_.isEmpty()) return false;
+
+    const int H = mapImageSize_.height();
+
+    const int gx = px;
+    const int gy = (H - 1) - py;
+
+    x_m = mapMeta_.origin_x + gx * mapMeta_.resolution;
+    y_m = mapMeta_.origin_y + gy * mapMeta_.resolution;
+    return true;
+}
+
+void MainWindow::refitView()
+{
+    if (!mapItem) return;
+
+    ui->graphicsView->resetTransform();
+
+    QTransform t;
+    t.rotate(-90.0);
+    ui->graphicsView->setTransform(t);
+
+    ui->graphicsView->fitInView(mapItem->boundingRect(),
+                                Qt::KeepAspectRatio);
+
+    ui->graphicsView->setTransform(t, true);
+}
+
