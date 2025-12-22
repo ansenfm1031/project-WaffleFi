@@ -19,3 +19,10 @@ python3 -m proj_wifi_heatmap_rl/train_dqn.py --resume runs_dqn/dqn_ep0800.pt --m
 python3 -m proj_wifi_heatmap_rl/train_dqn.py --resume runs_dqn/dqn_ep0800.pt --total-episodes 1000
 python3 -m proj_wifi_heatmap_rl/train_dqn.py --resume runs_dqn/dqn_ep0800.pt --more-episodes 200 --reset-optim
 ```
+
+```bash
+python3 -m proj_wifi_heatmap_rl/test_dqn_policy.py \
+  --ckpt runs_dqn/dqn_ep0800.pt \
+  --episodes 1 \
+  --sleep 0.05
+```
