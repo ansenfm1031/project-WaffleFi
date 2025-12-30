@@ -94,7 +94,7 @@ MainWindow::MainWindow(QWidget *parent)
     robotItem->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
     robotItem->setVisible(true);
 
-    const QString yamlPath = "/home/ubuntu/ros2/maps/map_simul_world.yaml";
+    const QString yamlPath = "../../../../docs/maps/map.yaml";
     if (!loadStaticMap(yamlPath)) {
         qDebug() << "Failed to load map yaml:" << yamlPath;
     } else {
