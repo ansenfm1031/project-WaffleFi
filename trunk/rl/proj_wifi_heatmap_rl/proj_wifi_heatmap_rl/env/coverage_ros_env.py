@@ -13,7 +13,7 @@ from gymnasium import spaces
 import rclpy
 from rclpy.node import Node
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point, PoseWithCovarianceStamped
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from std_srvs.srv import Empty
@@ -123,6 +123,11 @@ class RosCoverageEnv(gym.Env):
         self.scan_sub = self.node.create_subscription(LaserScan, self.cfg.scan_topic, self._on_scan, 10)
         self.odom_sub = self.node.create_subscription(Odometry, self.cfg.odom_topic, self._on_odom, 10)
 
+        # AMCL pose cache
+        self._last_amcl_xy = None
+        self._amcl_sub = self.node.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", self._amcl_cb, 10)
+        self._grid_pose_pub = self.node.create_publisher(Point, "/grid_pose", 10)
+
         # reset 서비스는 환경마다 이름이 달라서 둘 다 시도
         self.reset_clients = [
             self.node.create_client(Empty, name) for name in self.cfg.reset_services
@@ -165,6 +170,24 @@ class RosCoverageEnv(gym.Env):
     def _on_odom(self, msg: Odometry):
         self._odom = msg
         self._odom_event.set()
+
+    def _amcl_cb(self, msg: PoseWithCovarianceStamped):
+        x = float(msg.pose.pose.position.x)
+        y = float(msg.pose.pose.position.y)
+        self._last_amcl_xy = (x, y)
+    
+    def _publish_grid_pose(self):
+        if self._last_amcl_xy is None:
+            return False
+
+        x, y = self._last_amcl_xy
+        p = Point()
+        p.x = x
+        p.y = y
+        p.z = 0.0
+
+        self._grid_pose_pub.publish(p)
+        return True
 
     # ---------------- Gym API ----------------
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
@@ -327,6 +350,8 @@ class RosCoverageEnv(gym.Env):
             reward += self.cfg.reward_new_cell
             self.new_cell = True
             self.new_cells_this_ep += 1
+            # publish grid pose
+            self._publish_grid_pose()
         else:
             reward += self.cfg.reward_revisit
 
