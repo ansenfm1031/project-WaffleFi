@@ -14,7 +14,7 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2/utils.h>
 
-#include "wifi_interface/wifi_interface/msg/wifi_fused.hpp"
+#include "wifi_interface/msg/wifi_fused.hpp"
 
 
 class RosWorker : public QThread

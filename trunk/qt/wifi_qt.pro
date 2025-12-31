@@ -5,6 +5,7 @@ TEMPLATE = app
 TARGET = wifi_qt
 
 ROS_ROOT = /opt/ros/humble
+ROS_WS = $$(HOME)/turtlebot3_ws
 
 INCLUDEPATH += $$HOME/turtlebot3_ws/install/wifi_interface/include
 INCLUDEPATH += $$ROS_ROOT/include
@@ -62,15 +63,19 @@ INCLUDEPATH += \
 
 #INCLUDEPATH += /home/ubuntu/turtlebot3_ws/install/wifi_interface/include/wifi_interface
 
+INCLUDEPATH += $$ROS_WS/install/wifi_interface/include/wifi_interface
+LIBS += -L$$ROS_WS/install/wifi_interface/lib \
+        -lwifi_interface__rosidl_typesupport_cpp \
+        -lrosidl_typesupport_cpp \
+        -lrosidl_runtime_c
+
+LIBS += -lrosidl_typesupport_cpp \
+        -lrosidl_runtime_c
 
 # 링크 옵션
 QMAKE_LFLAGS += -Wl,--no-as-needed
 QMAKE_LFLAGS += -Wl,-rpath,$$ROS_ROOT/lib
 
-LIBS += -L$$HOME/turtlebot3_ws/install/wifi_interface/lib \
-        -lwifi_interface__rosidl_typesupport_cpp \
-        -lrosidl_typesupport_cpp \
-        -lrosidl_runtime_c
 
 LIBS += \
     -L/usr/lib/x86_64-linux-gnu -lsqlite3 \
@@ -126,10 +131,6 @@ LIBS += \
     -lrosidl_typesupport_c \
     -lrosidl_runtime_c \
     -lrclcpp
-
-LIBS += -L$$ROS_WS/install/wifi_interface/lib \
-        -lwifi_interface__rosidl_typesupport_cpp \
-        -lrosidl_typesupport_cpp -lrosidl_runtime_c
 
 SOURCES += \
     main.cpp \

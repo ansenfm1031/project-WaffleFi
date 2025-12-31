@@ -1,20 +1,16 @@
 #include "rosworker.h"
-
 #include <QThread>
 #include <QString>
-
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2/utils.h>
-
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <nav2_msgs/action/navigate_to_pose.hpp>
 #include <cmath>
+#include "wifi_interface/msg/wifi_fused.hpp"
 
-#include "wifi_interface/wifi_interface/msg/wifi_fused.hpp"
 
 static geometry_msgs::msg::Quaternion yawToQuat(double yaw)
 {
@@ -40,7 +36,7 @@ void RosWorker::requestNavigateTo(double x, double y, double yaw_rad)
 void RosWorker::run()
 {
     rclcpp::NodeOptions opts;
-    node_ = std::make_shared<rclcpp::Node>("wifi_qt_node", opts);
+    node_ = std::make_shared<rclcpp::Node>("qt_visualizer_node", opts);
     exec_.add_node(node_);
 
     // TF
@@ -73,19 +69,38 @@ void RosWorker::run()
 
     // /wifi/fused
     emit statusChanged("Subscribing /wifi/fused ...");
+    // fused_sub_ = node_->create_subscription<wifi_interface::msg::WifiFused>(
+    //     "/wifi/fused", rclcpp::QoS(10),
+    //     [this](wifi_interface::msg::WifiFused::SharedPtr msg)
+    //     {
+    //         if (msg->ssid.empty()) return;
+
+    //         // msg->x, msg->y : meter in map frame
+    //         // msg->rssi      : float
+    //         const int rssi_i = (int)std::lround(msg->rssi);
+
+    //         emit fusedSample(msg->x, msg->y, QString::fromStdString(msg->ssid), rssi_i);
+    //     }
+    //     );
     fused_sub_ = node_->create_subscription<wifi_interface::msg::WifiFused>(
         "/wifi/fused", rclcpp::QoS(10),
         [this](wifi_interface::msg::WifiFused::SharedPtr msg)
         {
+            RCLCPP_INFO(
+                node_->get_logger(),
+                "[Qt] RX /wifi/fused: ssid=%s x=%.2f y=%.2f rssi=%.1f",
+                msg->ssid.c_str(), msg->x, msg->y, msg->rssi
+                );
+
             if (msg->ssid.empty()) return;
 
-            // msg->x, msg->y : meter in map frame
-            // msg->rssi      : float
             const int rssi_i = (int)std::lround(msg->rssi);
-
-            emit fusedSample(msg->x, msg->y, QString::fromStdString(msg->ssid), rssi_i);
+            emit fusedSample(msg->x, msg->y,
+                             QString::fromStdString(msg->ssid),
+                             rssi_i);
         }
         );
+
 
     // Nav2 action client
     using NavigateToPose = nav2_msgs::action::NavigateToPose;
