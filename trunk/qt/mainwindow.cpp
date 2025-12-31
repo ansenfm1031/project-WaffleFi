@@ -96,7 +96,7 @@ MainWindow::MainWindow(QWidget *parent)
     // =======================
     // Load static map
     // =======================
-    const QString yamlPath = "../../../../docs/maps/map.yaml";
+    const QString yamlPath = "../../docs/maps/map.yaml";
     if (!loadStaticMap(yamlPath)) {
         qDebug() << "Failed to load map yaml:" << yamlPath;
     } else {
