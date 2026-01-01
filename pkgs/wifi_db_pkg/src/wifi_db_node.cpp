@@ -24,7 +24,8 @@ public:
   WifiDbNode() : Node("wifi_db_node")
   {
     device_info_ = "turtlebot3";
-    db_path_ = "/home/ros/turtlebot3_ws/data/my_wifi.db";
+    db_path_ = "/home/ros/intel-edge-ai-sw-8/2601_4th_proj_dahyeon/"
+  "trunk/data/wifi/wifi_heatmap.db";
 
     std::filesystem::create_directories(std::filesystem::path(db_path_).parent_path());
 
@@ -204,7 +205,7 @@ private:
     } else {
       RCLCPP_INFO_THROTTLE(
         get_logger(), *get_clock(), 2000,
-        "DB insert: sid=%s ssid=%s x=%.2f y=%.2f rssi=%.1f",
+        "DB insert: sid=%s ssid=%s x=%.2f y=%.2f rssi=%d",
         current_session_id_.c_str(), msg->ssid.c_str(), msg->x, msg->y, msg->rssi
       );
     }

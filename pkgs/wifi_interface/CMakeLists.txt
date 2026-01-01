@@ -11,6 +11,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetHeatmap.srv"
   "srv/ListSessions.srv"
   "srv/DeleteSession.srv"
+  "srv/ListSsids.srv"
   DEPENDENCIES std_msgs
 )
 
