@@ -1,9 +1,0 @@
-setup.py
-wifi_interface/__init__.py
-wifi_interface.egg-info/PKG-INFO
-wifi_interface.egg-info/SOURCES.txt
-wifi_interface.egg-info/dependency_links.txt
-wifi_interface.egg-info/top_level.txt
-wifi_interface/msg/__init__.py
-wifi_interface/msg/_wifi_fused.py
-wifi_interface/msg/_wifi_rssi.py
