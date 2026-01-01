@@ -18,14 +18,12 @@ INCLUDEPATH += $$PWD/3rdparty/QHeatMap/include
 SOURCES += $$PWD/3rdparty/QHeatMap/lib/*.cpp \
     autoexplorer.cpp \
     heatlayer.cpp \
-    legendbarwidget.cpp \
-    mainwindow3.cpp
+    legendbarwidget.cpp
 HEADERS += $$PWD/3rdparty/QHeatMap/include/*.h \
     AppState.h \
     autoexplorer.h \
     heatlayer.h \
-    legendbarwidget.h \
-    mainwindow3.h
+    legendbarwidget.h
 
 
 INCLUDEPATH += \
@@ -142,8 +140,7 @@ HEADERS += \
     rosworker.h
 
 FORMS += \
-    mainwindow.ui \
-    mainwindow3.ui
+    mainwindow.ui
 
 DISTFILES += \
     icons/db-svgrepo-com.svg \

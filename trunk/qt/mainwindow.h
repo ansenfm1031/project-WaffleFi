@@ -1,203 +1,144 @@
-#ifndef MAINWINDOW_H
-#define MAINWINDOW_H
+#pragma once
 
 #include <QMainWindow>
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
 #include <QGraphicsEllipseItem>
-#include <QImage>
 #include <QTimer>
-#include <QPointF>
-#include <QVector>
-#include <QSize>
+#include <QImage>
+#include <QResizeEvent>
+#include <QShowEvent>
+#include <QMouseEvent>
 #include <QSet>
-#include <QDir>
 
 
 #include "rosworker.h"
-#include "autoexplorer.h"
-#include "heatlayer.h"
+#include "legendbarwidget.h"
+
+// QHeatMap(HeatMapper 방식)
 #include "heatmapper.h"
 #include "gradientpalette.h"
-#include "legendbarwidget.h"
+
+// HeatLayer를 이미 쓰고 있다면 include 유지
+#include "heatlayer.h"
+#include "autoexplorer.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
 
-struct MapMeta
-{
-    QString imagePath;
+struct MapMeta {
     double resolution = 0.05;
     double origin_x = 0.0;
     double origin_y = 0.0;
     double origin_yaw = 0.0;
+    QString imagePath;
 };
 
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent=nullptr);
     ~MainWindow();
 
-    enum class Mode { View, Measurement, Query, SimAP };
-
-private slots:
-    // ROS
-    void onRosStatus(const QString &msg);
-    void onRobotPose(double x, double y, double yaw);
-
-    // dummy (선택: test 모드에서만 사용)
-    void onSample(double x, double y, double yaw, float rssi);
-
-    // Live heatmap from /wifi/fused
-    void onFusedSample(double x_m, double y_m, const QString& ssid, int rssi);
-
-    // (옵션) gridPose를 쓰면 유지, 안 쓰면 제거 가능
-    void onGridPose(double gx, double gy);
-
-    // RL (현재는 수신 로그만)
-    void onRlStateArrived();
-
-    // Heatmap flush
-    void flushHeatmap();
-
-    // UI toggles
-    void onLayerHeatmap(bool on);
-    void onLayerRobot(bool on);
-    void onLayerPins(bool on);
-
-    void onAutoExploreToggled(bool on);
-
-    // Snapshot Sessions
-    void onSessionRefresh();
-    void onSessionLoad();
-    void onSessionDelete();
-    void on_btnSessionLoad_clicked();   // 오토슬롯
-    void onQueryClear();
-
-    // Start/Stop (live 누적 ON/OFF + Start 시 snapshot 생성)
-    void onMeasureStart();
-    void onMeasureStop();
-
-    // Filter
-    void onApplyFilter();
-
-    // Sim
-    void onSimEnable(bool on);
-    void onSimParamsChanged();
-    void onClearPins();
-
-    // Admin (비활성화됨)
-    void onAdminClicked();
-
 protected:
+    void resizeEvent(QResizeEvent* e) override;
     void showEvent(QShowEvent* e) override;
-    void resizeEvent(QResizeEvent* event) override;
     bool eventFilter(QObject* obj, QEvent* ev) override;
 
-private:
-    // Context/Policy
-    Mode deriveModeFromContext() const;
-    void updateUiByContext();
-    void applyLayersPolicy();
+private slots:
+    void onRosStatus(const QString& msg);
+    void onRobotPose(double x, double y, double yaw);
 
-    // Map
+    // live fused sample -> live heatmap
+    void onFusedSample(double x_m, double y_m, const QString& ssid, int rssi);
+
+    // past heatmap service reply -> query heatmap
+    void onHeatmapReplyArrived(bool ok,
+                               const QString& message,
+                               const QString& session_id,
+                               const QString& ssid,
+                               bool thr_enable,
+                               int thr_rssi,
+                               const QVector<double>& xs,
+                               const QVector<double>& ys,
+                               const QVector<int>& rssis,
+                               const QVector<QString>& ssids,
+                               const QVector<QString>& stamps);
+
+    // UI actions
+    void on_btnSessionLoad_clicked();   // autoconnect
+    void onSessionRefresh();            // (여기서는 서비스 기반으로 간단히)
+    void onQueryClear();
+    void onApplyFilter();
+    void onLayerHeatmap(bool);
+    void onLayerRobot(bool);
+
+private:
+    // ===== map load =====
     bool loadStaticMap(const QString& yamlPath);
     bool parseMapYaml(const QString& yamlPath, MapMeta& out);
+
+    // ===== view =====
     void applyViewTransform();
 
+    // ===== coord transforms =====
     bool meterToPixel(double x, double y, int& px, int& py) const;
     bool pixelToMap(int px, int py, double& x_m, double& y_m) const;
-
-    // Click / Nav
     bool sceneToMapPixel(const QPointF& scenePos, int& px, int& py) const;
-    void onMapClicked(const QPointF& scenePos);
 
-    // Live Heatmap
-    void initHeatmapLayer();
+    // ===== heatmaps =====
+    int brushRadiusPx() const;
     float rssiToIntensity01(float rssi) const;
-    int radiusPx() const;
 
-    // Snapshot query (sqlite3 READONLY)
-    QString makeDbSnapshot();
-    void reloadQueryLayerFromSnapshot(const QString& snapshotPath);
+    void initLiveHeatmap();
+    void initQueryHeatmap();
+    void flushLiveHeatmap();
+    void flushQueryHeatmap();
+    void clearQueryHeatmap();
 
-    // SSID combo live update
-    void updateSsidComboLive(const QString& ssid);
+    // query(service) request helper
+    void requestPastHeatmap();
 
-    // Sim
-    struct SimPin { double x_m = 0.0; double y_m = 0.0; };
-    void addSimPinAt(double x_m, double y_m);
-    void rebuildSimLayer();
-    float simRssiAt(double d_m) const;
-
-    // Legend overlay
-    void initLegendOverlay();
-    void updateLegendOverlayGeometry();
-
-    int radiusPxLive() const;
-    int simBrushRadiusPx() const;
+    // policy: Query 우선(세션 로드 중) / 아니면 Live
+    void applyLayersPolicy();
 
 private:
-    Ui::MainWindow *ui = nullptr;
-    RosWorker *rosThread = nullptr;
+    Ui::MainWindow* ui = nullptr;
 
-    QGraphicsScene *scene = nullptr;
-    QGraphicsPixmapItem *mapItem = nullptr;
-    QGraphicsEllipseItem *robotItem = nullptr;
+    RosWorker* rosThread = nullptr;
 
-    // Map
-    MapMeta mapMeta_;
-    QSize mapImageSize_;
+    QGraphicsScene* scene = nullptr;
+    QGraphicsPixmapItem* mapItem = nullptr;
+    QGraphicsPixmapItem* liveHeatItem = nullptr;
+    QGraphicsPixmapItem* queryHeatItem = nullptr;
+    QGraphicsEllipseItem* robotItem = nullptr;
+
     bool mapReady_ = false;
     bool poseReady_ = false;
 
-    // Live heatmap (HeatMapper)
-    QImage heatCanvas_;
-    GradientPalette* palette_ = nullptr;
-    HeatMapper* heatMapper_ = nullptr;
-    QGraphicsPixmapItem* heatItem_ = nullptr;
-    QTimer* heatFlushTimer_ = nullptr;
+    MapMeta mapMeta_;
+    QSize mapImageSize_;
 
-    // Query/Sim layers (HeatLayer)
-    HeatLayer queryLayer_;
-    HeatLayer simLayer_;
+    // live heatmap
+    QImage liveCanvas_;
+    GradientPalette* livePalette_ = nullptr;
+    HeatMapper* liveMapper_ = nullptr;
+    QTimer* liveFlushTimer_ = nullptr;
 
-    // UI/State
-    Mode currentMode_ = Mode::View;
+    // query heatmap
+    QImage queryCanvas_;
+    GradientPalette* queryPalette_ = nullptr;
+    HeatMapper* queryMapper_ = nullptr;
 
-    // ====== Snapshot 방식 상태 ======
-    QString sourceDbPath_ = "/home/ros/turtlebot3_ws/data/my_wifi.db";
-    QString snapshotDir_  = QDir::homePath() + "/wifi_qt_snapshots";
-    QString loadedSnapshotPath_;
-
-    // Start/Stop → live heatmap 누적 ON/OFF
-    bool accumulating_ = false;
-
-    // Live SSID set
-    QSet<QString> ssidSetLive_;
-
-    // Filter
+    // UI state
+    bool accumulating_ = true;          // Start/Stop 정책(원하면 연결)
+    QString currentSessionId_;          // “과거” 모드 진입 여부
     QString filterSsid_ = "ALL";
-    bool filterThrEnable_ = true; // UI에서 chkThrEnable 숨김이므로 기본 true 추천
+    bool filterThrEnable_ = false;
     int filterThrRssi_ = -70;
 
-    // Sim
-    bool simEnabled_ = false;
-    double simTxPower_ = -40.0;
-    int simChannel_ = 36;
-    int simBandwidth_ = 80;
-    QVector<SimPin> simPins_;
-    QVector<QGraphicsItem*> apPins_;
-
-    // Nav / Auto explorer
-    bool navBusy_ = false;
-    AutoExplorer autoExplorer_;
-
-    // Legend
-    LegendBarWidget* legendOverlay_ = nullptr;
+    uint32_t queryLimit_ = 200000;
+    uint32_t queryOffset_ = 0;
 };
-
-#endif // MAINWINDOW_H

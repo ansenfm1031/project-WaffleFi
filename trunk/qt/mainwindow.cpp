@@ -6,18 +6,13 @@
 #include <QDir>
 #include <QPixmap>
 #include <QDebug>
-#include <cmath>
 #include <QResizeEvent>
 #include <QMouseEvent>
 #include <QShowEvent>
 #include <QDateTime>
-#include <QTimer>
-#include <QSet>
-
-#include <sqlite3.h>
+#include <cmath>
 
 static inline double rad2deg(double r) { return r * 180.0 / M_PI; }
-
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -25,62 +20,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    // =======================
-    // Left panel tab behavior
-    // =======================
-    ui->leftPanel_2->setVisible(false);
-    ui->leftStack->setCurrentWidget(ui->pageSession);
-
-    auto showPanel = [&](QWidget* page) {
-        ui->leftPanel_2->setVisible(true);
-        ui->leftStack->setCurrentWidget(page);
-    };
-    auto hidePanel = [&]() {
-        ui->leftPanel_2->setVisible(false);
-    };
-
-    auto initTab = [&](QToolButton* tabBtn, QWidget* pageWidget) {
-        if (!tabBtn || !pageWidget) return;
-
-        tabBtn->setCheckable(true);
-        tabBtn->setAutoExclusive(false);
-
-        connect(tabBtn, &QToolButton::clicked, this, [=]() {
-            const bool panelVisible = ui->leftPanel_2->isVisible();
-            const bool samePage = (ui->leftStack->currentWidget() == pageWidget);
-
-            if (panelVisible && samePage) {
-                hidePanel();
-                tabBtn->setChecked(false);
-                return;
-            }
-
-            showPanel(pageWidget);
-
-            // manual exclusive
-            if (ui->tbSession) ui->tbSession->setChecked(tabBtn == ui->tbSession);
-            if (ui->tbSim)     ui->tbSim->setChecked(tabBtn == ui->tbSim);
-            if (ui->tbLayers)  ui->tbLayers->setChecked(tabBtn == ui->tbLayers);
-        });
-    };
-
-    initTab(ui->tbSession, ui->pageSession);
-    initTab(ui->tbSim,     ui->pageSim);
-    initTab(ui->tbLayers,  ui->pageLayers);
-
-    if (ui->tbSession) ui->tbSession->setChecked(false);
-    if (ui->tbSim)     ui->tbSim->setChecked(false);
-    if (ui->tbLayers)  ui->tbLayers->setChecked(false);
-
-    // Admin은 DB 직접 접근 금지 → 비활성화
-    if (ui->btnAdmin) {
-        ui->btnAdmin->setEnabled(false);
-        connect(ui->btnAdmin, &QAbstractButton::clicked, this, &MainWindow::onAdminClicked);
-    }
-
-    // =======================
-    // Graphics scene
-    // =======================
+    // ===== graphics =====
     scene = new QGraphicsScene(this);
     ui->graphicsView->setScene(scene);
     ui->graphicsView->viewport()->installEventFilter(this);
@@ -103,125 +43,34 @@ MainWindow::MainWindow(QWidget *parent)
         mapReady_ = true;
     }
 
-    // =======================
-    // Live heatmap init
-    // =======================
-    initHeatmapLayer();
+    // ===== heatmaps init =====
+    initLiveHeatmap();
+    initQueryHeatmap();
 
-    // =======================
-    // Sim layer init
-    // =======================
-    if (!simLayer_.isReady() && mapReady_) {
-        simLayer_.init(scene, mapImageSize_, 7, simBrushRadiusPx(), 160);
-        simLayer_.setVisible(false);
-    }
-
-    // =======================
-    // Query layer init (스냅샷 Load 결과 표시용)
-    // =======================
-    if (mapReady_) {
-        if (!queryLayer_.isReady()) {
-            queryLayer_.init(scene, mapImageSize_, 6, radiusPxLive(), 160);
-            queryLayer_.setVisible(false);
-        }
-    }
-
-    // =======================
-    // ROS worker thread
-    // =======================
+    // ===== ROS worker =====
     rosThread = new RosWorker(this);
     connect(rosThread, &RosWorker::statusChanged, this, &MainWindow::onRosStatus);
     connect(rosThread, &RosWorker::robotPose,     this, &MainWindow::onRobotPose);
-
-    // dummy sample은 test모드가 아니면 불필요 (남겨도 무방)
-    connect(rosThread, &RosWorker::sample,        this, &MainWindow::onSample);
-
-    // Live fused (진짜 데이터)
     connect(rosThread, &RosWorker::fusedSample,   this, &MainWindow::onFusedSample);
-
-    // Robot marker (gridPose는 현재 px로 처리 중이므로 쓰지 않으면 연결 빼도 됨)
-    connect(rosThread, &RosWorker::gridPose,      this, &MainWindow::onGridPose);
-    connect(rosThread, &RosWorker::rlStateArrived,this, &MainWindow::onRlStateArrived);
-
+    connect(rosThread, &RosWorker::heatmapReplyArrived, this, &MainWindow::onHeatmapReplyArrived);
     rosThread->start();
 
-    // =======================
-    // Layer toggles
-    // =======================
-    connect(ui->chkShowHeatmap, &QCheckBox::toggled, this, &MainWindow::onLayerHeatmap);
-    connect(ui->chkShowRobot,   &QCheckBox::toggled, this, &MainWindow::onLayerRobot);
-    connect(ui->chkShowApPins,  &QCheckBox::toggled, this, &MainWindow::onLayerPins);
+    // ===== UI connects =====
+    if (ui->chkShowHeatmap) connect(ui->chkShowHeatmap, &QCheckBox::toggled, this, &MainWindow::onLayerHeatmap);
+    if (ui->chkShowRobot)   connect(ui->chkShowRobot,   &QCheckBox::toggled, this, &MainWindow::onLayerRobot);
 
-    // Auto Explore
-    connect(ui->chkAutoExplore, &QCheckBox::toggled, this, &MainWindow::onAutoExploreToggled);
+    if (ui->btnQueryClear) connect(ui->btnQueryClear, &QPushButton::clicked, this, &MainWindow::onQueryClear);
+    if (ui->btnApplyFilter) connect(ui->btnApplyFilter, &QPushButton::clicked, this, &MainWindow::onApplyFilter);
 
-    // =======================
-    // Session (Snapshot)
-    // =======================
-    connect(ui->btnSessionRefresh, &QPushButton::clicked, this, &MainWindow::onSessionRefresh);
-    // btnSessionLoad는 오토슬롯 on_btnSessionLoad_clicked로만 진입
-    connect(ui->btnSessionDelete,  &QPushButton::clicked, this, &MainWindow::onSessionDelete);
+    // 세션 목록 “refresh”는 지금 단계에서는 DB 서비스가 따로 list를 안 주므로
+    // UI에서 cbSessionId가 이미 채워진다고 가정하거나, 팀에서 list 서비스를 별도로 붙이면 됩니다.
+    // 여기서는 버튼이 눌리면 화면 메시지만 갱신.
+    if (ui->btnSessionRefresh) connect(ui->btnSessionRefresh, &QPushButton::clicked, this, &MainWindow::onSessionRefresh);
 
-    // Query Clear
-    if (ui->btnQueryClear) {
-        connect(ui->btnQueryClear, &QPushButton::clicked, this, &MainWindow::onQueryClear);
-    }
+    // 기본 필터값
+    if (ui->cbSsid && ui->cbSsid->count() == 0) ui->cbSsid->addItem("ALL");
 
-    // =======================
-    // Measure: Start/Stop = live 누적 ON/OFF (+ Start 시 snapshot 자동 생성)
-    // =======================
-    if (ui->btnMeasureStart) {
-        ui->btnMeasureStart->setCheckable(false);
-        ui->btnMeasureStart->setText("Start");
-        connect(ui->btnMeasureStart, &QPushButton::clicked, this, [this]() {
-            if (!accumulating_) onMeasureStart();
-            else                onMeasureStop();
-
-            updateUiByContext();
-
-            QTimer::singleShot(0, this, [this]{
-                ui->btnMeasureStart->setDown(false);
-                ui->btnMeasureStart->clearFocus();
-                ui->btnMeasureStart->repaint();
-            });
-        });
-    }
-
-    // Filter apply
-    connect(ui->btnApplyFilter, &QPushButton::clicked, this, &MainWindow::onApplyFilter);
-
-    // =======================
-    // Sim controls
-    // =======================
-    connect(ui->chkSimEnable, &QCheckBox::toggled, this, &MainWindow::onSimEnable);
-    connect(ui->spTxPower,    QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onSimParamsChanged);
-    connect(ui->spSimChannel, QOverload<int>::of(&QSpinBox::valueChanged),          this, &MainWindow::onSimParamsChanged);
-    connect(ui->cbSimBandwidth, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onSimParamsChanged);
-    connect(ui->btnClearPins, &QPushButton::clicked, this, &MainWindow::onClearPins);
-
-    // AutoExplorer integration
-    connect(rosThread, &RosWorker::goalStatus, &autoExplorer_, &AutoExplorer::onGoalStatus);
-    connect(&autoExplorer_, &AutoExplorer::newGoal, this, [this](double x, double y, double yaw){
-        if (navBusy_) return;
-        if (!ui->chkAutoExplore->isChecked()) return;
-        rosThread->requestNavigateTo(x, y, yaw);
-        navBusy_ = true;
-    });
-
-    // ===== init =====
-    // SSID 콤보 초기화(ALL 보장)
-    if (ui->cbSsid) {
-        ui->cbSsid->clear();
-        ui->cbSsid->addItem("ALL");
-        ssidSetLive_.clear();
-        ssidSetLive_.insert("ALL");
-    }
-
-    // Snapshot 목록 초기 로드
-    onSessionRefresh();
-    onSimParamsChanged();
-    updateUiByContext();
-    initLegendOverlay();
+    applyLayersPolicy();
 }
 
 MainWindow::~MainWindow()
@@ -231,14 +80,18 @@ MainWindow::~MainWindow()
         rosThread->wait();
     }
 
-    delete heatFlushTimer_;
-    heatFlushTimer_ = nullptr;
+    delete liveFlushTimer_;
+    liveFlushTimer_ = nullptr;
 
-    delete heatMapper_;
-    heatMapper_ = nullptr;
+    delete liveMapper_;
+    liveMapper_ = nullptr;
+    delete livePalette_;
+    livePalette_ = nullptr;
 
-    delete palette_;
-    palette_ = nullptr;
+    delete queryMapper_;
+    queryMapper_ = nullptr;
+    delete queryPalette_;
+    queryPalette_ = nullptr;
 
     delete ui;
 }
@@ -246,68 +99,7 @@ MainWindow::~MainWindow()
 void MainWindow::onRosStatus(const QString &msg)
 {
     qDebug() << msg;
-}
-
-// ======================
-// Context-based Mode
-// ======================
-MainWindow::Mode MainWindow::deriveModeFromContext() const
-{
-    if (ui->chkSimEnable->isChecked())
-        return Mode::SimAP;
-
-    if (!loadedSnapshotPath_.isEmpty())
-        return Mode::Query;
-
-    if (accumulating_)
-        return Mode::Measurement;
-
-    return Mode::View;
-}
-
-void MainWindow::updateUiByContext()
-{
-    currentMode_ = deriveModeFromContext();
-
-    // Start/Stop button
-    if (ui->btnMeasureStart) {
-        ui->btnMeasureStart->setEnabled(true);
-        ui->btnMeasureStart->setText(accumulating_ ? "Stop" : "Start");
-    }
-
-    // Sim group enable/disable
-    simEnabled_ = ui->chkSimEnable->isChecked();
-    if (ui->gbSim) ui->gbSim->setEnabled(true);
-    if (ui->chkSimEnable) ui->chkSimEnable->setEnabled(true);
-
-    if (ui->spTxPower)      ui->spTxPower->setEnabled(simEnabled_);
-    if (ui->spSimChannel)   ui->spSimChannel->setEnabled(simEnabled_);
-    if (ui->cbSimBandwidth) ui->cbSimBandwidth->setEnabled(simEnabled_);
-    if (ui->btnClearPins)   ui->btnClearPins->setEnabled(simEnabled_);
-
-    // Robot visibility
-    if (robotItem)
-        robotItem->setVisible(ui->chkShowRobot->isChecked() && poseReady_);
-
-    // Layer policy
-    applyLayersPolicy();
-
-    // Status
-    if (simEnabled_) {
-        statusBar()->showMessage("Sim: Shift+Click or Right Click to drop AP pins");
-    } else if (!loadedSnapshotPath_.isEmpty()) {
-        statusBar()->showMessage("Query: loaded snapshot. Use Clear to remove.");
-    } else if (accumulating_) {
-        statusBar()->showMessage("Measuring: live heatmap accumulating.");
-    } else {
-        statusBar()->showMessage("View: live heatmap.");
-    }
-}
-
-int MainWindow::radiusPx() const
-{
-    const double radius_m = 0.25;
-    return qMax(1, int(std::round(radius_m / mapMeta_.resolution)));
+    statusBar()->showMessage(msg);
 }
 
 // ======================
@@ -367,11 +159,10 @@ bool MainWindow::parseMapYaml(const QString &yamlPath, MapMeta &out)
 // ======================
 // View transform
 // ======================
-void MainWindow::resizeEvent(QResizeEvent* event)
+void MainWindow::resizeEvent(QResizeEvent* e)
 {
-    QMainWindow::resizeEvent(event);
+    QMainWindow::resizeEvent(e);
     applyViewTransform();
-    updateLegendOverlayGeometry();
 }
 
 void MainWindow::showEvent(QShowEvent* e)
@@ -379,7 +170,6 @@ void MainWindow::showEvent(QShowEvent* e)
     QMainWindow::showEvent(e);
     QTimer::singleShot(0, this, [this]{
         applyViewTransform();
-        updateLegendOverlayGeometry();
     });
 }
 
@@ -389,7 +179,6 @@ void MainWindow::applyViewTransform()
     if (scene->sceneRect().isEmpty()) return;
 
     auto* v = ui->graphicsView;
-
     v->setTransformationAnchor(QGraphicsView::AnchorViewCenter);
     v->setResizeAnchor(QGraphicsView::AnchorViewCenter);
     v->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -399,6 +188,7 @@ void MainWindow::applyViewTransform()
     v->resetTransform();
     v->fitInView(scene->sceneRect(), Qt::KeepAspectRatio);
 
+    // 기존 프로젝트처럼 -90 회전 유지
     QTransform t = v->transform();
     t.rotate(-90.0);
     v->setTransform(t, false);
@@ -470,89 +260,6 @@ bool MainWindow::pixelToMap(int px, int py, double& x_m, double& y_m) const
     return true;
 }
 
-// ======================
-// Robot pose
-// ======================
-void MainWindow::onRobotPose(double x, double y, double yaw)
-{
-    if (!mapReady_) return;
-
-    int px=0, py=0;
-    if (!meterToPixel(x, y, px, py)) return;
-
-    robotItem->setPos(QPointF(px, py));
-    robotItem->setRotation(-rad2deg(yaw));
-
-    if (!poseReady_) {
-        poseReady_ = true;
-        robotItem->setVisible(ui->chkShowRobot->isChecked() && poseReady_);
-    }
-}
-
-// ======================
-// Live heatmap
-// ======================
-void MainWindow::initHeatmapLayer()
-{
-    if (!mapReady_ || mapImageSize_.isEmpty() || !scene) return;
-
-    heatCanvas_ = QImage(mapImageSize_, QImage::Format_ARGB32);
-    heatCanvas_.fill(Qt::transparent);
-
-    delete palette_;
-    palette_ = new GradientPalette(256);
-    palette_->setColorAt(0.0, QColor(255, 0, 0));
-    palette_->setColorAt(0.5, QColor(255, 255, 0));
-    palette_->setColorAt(1.0, QColor(0, 255, 0));
-
-    delete heatMapper_;
-    heatMapper_ = new HeatMapper(&heatCanvas_, palette_, radiusPx(), 160, true, true);
-
-    if (!heatItem_) {
-        heatItem_ = scene->addPixmap(QPixmap::fromImage(heatCanvas_));
-        heatItem_->setZValue(5);
-        heatItem_->setPos(0, 0);
-    } else {
-        heatItem_->setPixmap(QPixmap::fromImage(heatCanvas_));
-    }
-
-    if (!heatFlushTimer_) {
-        heatFlushTimer_ = new QTimer(this);
-        connect(heatFlushTimer_, &QTimer::timeout, this, &MainWindow::flushHeatmap);
-        heatFlushTimer_->start(100);
-    }
-}
-
-// 색 3단계 양자화
-float MainWindow::rssiToIntensity01(float rssi) const
-{
-    if (rssi >= -50.f) return 1.0f;
-    if (rssi >= -70.f) return 0.5f;
-    return 0.0f;
-}
-
-void MainWindow::onSample(double x, double y, double /*yaw*/, float rssi)
-{
-    // (테스트용 dummy sample)
-    if (!mapReady_ || !heatMapper_) return;
-    if (!accumulating_) return; // live 누적 정책 동일 적용
-
-    int px=0, py=0;
-    if (!meterToPixel(x, y, px, py)) return;
-
-    heatMapper_->addPoint(px + 1, py + 1, rssiToIntensity01(rssi));
-}
-
-void MainWindow::flushHeatmap()
-{
-    if (!heatMapper_ || !heatItem_) return;
-    heatMapper_->colorize();
-    heatItem_->setPixmap(QPixmap::fromImage(heatCanvas_));
-}
-
-// ======================
-// Click handling
-// ======================
 bool MainWindow::sceneToMapPixel(const QPointF& scenePos, int& px, int& py) const
 {
     if (!mapReady_ || mapImageSize_.isEmpty() || !mapItem) return false;
@@ -569,6 +276,268 @@ bool MainWindow::sceneToMapPixel(const QPointF& scenePos, int& px, int& py) cons
     return true;
 }
 
+// ======================
+// Robot pose
+// ======================
+void MainWindow::onRobotPose(double x, double y, double yaw)
+{
+    if (!mapReady_) return;
+
+    int px=0, py=0;
+    if (!meterToPixel(x, y, px, py)) return;
+
+    robotItem->setPos(QPointF(px, py));
+    robotItem->setRotation(-rad2deg(yaw));
+
+    if (!poseReady_) poseReady_ = true;
+    robotItem->setVisible(ui->chkShowRobot && ui->chkShowRobot->isChecked());
+}
+
+// ======================
+// Heatmap utils
+// ======================
+int MainWindow::brushRadiusPx() const
+{
+    const double r_m = 0.25; // 25cm
+    return qMax(1, int(std::round(r_m / mapMeta_.resolution)));
+}
+
+float MainWindow::rssiToIntensity01(float rssi) const
+{
+    // 연속형 정규화 (원하면 3단계 양자화로 바꿔도 됨)
+    if (rssi < -90.f) rssi = -90.f;
+    if (rssi > -30.f) rssi = -30.f;
+    return (rssi + 90.f) / 60.f;
+}
+
+// ======================
+// Live heatmap (from /wifi/fused)
+// ======================
+void MainWindow::initLiveHeatmap()
+{
+    if (!mapReady_ || mapImageSize_.isEmpty() || !scene) return;
+
+    liveCanvas_ = QImage(mapImageSize_, QImage::Format_ARGB32);
+    liveCanvas_.fill(Qt::transparent);
+
+    livePalette_ = new GradientPalette(256);
+    livePalette_->setColorAt(0.0, QColor(255, 0, 0));
+    livePalette_->setColorAt(0.5, QColor(255, 255, 0));
+    livePalette_->setColorAt(1.0, QColor(0, 255, 0));
+
+    liveMapper_ = new HeatMapper(&liveCanvas_, livePalette_, brushRadiusPx(), 160, true, true);
+
+    liveHeatItem = scene->addPixmap(QPixmap::fromImage(liveCanvas_));
+    liveHeatItem->setZValue(5);
+    liveHeatItem->setPos(0, 0);
+
+    liveFlushTimer_ = new QTimer(this);
+    connect(liveFlushTimer_, &QTimer::timeout, this, &MainWindow::flushLiveHeatmap);
+    liveFlushTimer_->start(100);
+}
+
+void MainWindow::flushLiveHeatmap()
+{
+    if (!liveMapper_ || !liveHeatItem) return;
+    liveMapper_->colorize();
+    liveHeatItem->setPixmap(QPixmap::fromImage(liveCanvas_));
+}
+
+void MainWindow::onFusedSample(double x_m, double y_m, const QString& ssid, int rssi)
+{
+    if (!mapReady_ || !liveMapper_) return;
+    if (!accumulating_) return; // Start/Stop 정책
+
+    // Live에도 필터 적용(원치 않으면 이 2줄 제거)
+    if (!filterSsid_.isEmpty() && filterSsid_ != "ALL" && ssid != filterSsid_) return;
+    if (filterThrEnable_ && rssi < filterThrRssi_) return;
+
+    int px=0, py=0;
+    if (!meterToPixel(x_m, y_m, px, py)) return;
+
+    liveMapper_->addPoint(px + 1, py + 1, rssiToIntensity01((float)rssi));
+}
+
+// ======================
+// Query heatmap (from /db/get_heatmap)
+// ======================
+void MainWindow::initQueryHeatmap()
+{
+    if (!mapReady_ || mapImageSize_.isEmpty() || !scene) return;
+
+    queryCanvas_ = QImage(mapImageSize_, QImage::Format_ARGB32);
+    queryCanvas_.fill(Qt::transparent);
+
+    queryPalette_ = new GradientPalette(256);
+    queryPalette_->setColorAt(0.0, QColor(255, 0, 0));
+    queryPalette_->setColorAt(0.5, QColor(255, 255, 0));
+    queryPalette_->setColorAt(1.0, QColor(0, 255, 0));
+
+    queryMapper_ = new HeatMapper(&queryCanvas_, queryPalette_, brushRadiusPx(), 160, true, true);
+
+    queryHeatItem = scene->addPixmap(QPixmap::fromImage(queryCanvas_));
+    queryHeatItem->setZValue(6);
+    queryHeatItem->setPos(0, 0);
+    queryHeatItem->setVisible(false);
+}
+
+void MainWindow::flushQueryHeatmap()
+{
+    if (!queryMapper_ || !queryHeatItem) return;
+    queryMapper_->colorize();
+    queryHeatItem->setPixmap(QPixmap::fromImage(queryCanvas_));
+}
+
+void MainWindow::clearQueryHeatmap()
+{
+    if (queryCanvas_.isNull()) return;
+    queryCanvas_.fill(Qt::transparent);
+    flushQueryHeatmap();
+    if (queryHeatItem) queryHeatItem->setVisible(false);
+}
+
+// ======================
+// UI actions
+// ======================
+void MainWindow::onLayerHeatmap(bool)
+{
+    applyLayersPolicy();
+}
+
+void MainWindow::onLayerRobot(bool)
+{
+    if (!robotItem) return;
+    robotItem->setVisible(ui->chkShowRobot && ui->chkShowRobot->isChecked());
+}
+
+void MainWindow::onSessionRefresh()
+{
+    // 지금 단계에서는 “세션 리스트”를 DB에서 직접 뽑지 않음(요구사항: 과거는 DB 서비스)
+    // -> 팀에서 list_sessions 서비스를 추가하거나, UI에서 미리 채운다고 가정
+    statusBar()->showMessage("Session refresh: UI list is assumed (no direct DB access).");
+}
+
+void MainWindow::on_btnSessionLoad_clicked()
+{
+    if (!ui->cbSessionId) return;
+
+    const QString sid = ui->cbSessionId->currentData().toString().isEmpty()
+                            ? ui->cbSessionId->currentText()
+                            : ui->cbSessionId->currentData().toString();
+
+    if (sid.isEmpty()) {
+        statusBar()->showMessage("Load failed: empty session_id");
+        return;
+    }
+
+    currentSessionId_ = sid;
+    queryOffset_ = 0;
+    requestPastHeatmap();
+    applyLayersPolicy();
+}
+
+void MainWindow::onQueryClear()
+{
+    currentSessionId_.clear();
+    clearQueryHeatmap();
+    applyLayersPolicy();
+    statusBar()->showMessage("Query cleared (back to live).");
+}
+
+void MainWindow::onApplyFilter()
+{
+    filterSsid_ = (ui->cbSsid ? ui->cbSsid->currentText() : "ALL");
+    filterThrEnable_ = (ui->chkThrEnable ? ui->chkThrEnable->isChecked() : false);
+    filterThrRssi_ = (ui->cbThr ? ui->cbThr->currentText().toInt() : -70);
+
+    // 과거 모드면 즉시 재요청
+    if (!currentSessionId_.isEmpty()) {
+        queryOffset_ = 0;
+        requestPastHeatmap();
+    }
+
+    statusBar()->showMessage(QString("Filter: ssid=%1 thr=%2")
+                                 .arg(filterSsid_).arg(filterThrRssi_));
+}
+
+void MainWindow::requestPastHeatmap()
+{
+    if (!rosThread) return;
+    if (currentSessionId_.isEmpty()) return;
+
+    const QString ssid = filterSsid_.isEmpty() ? "ALL" : filterSsid_;
+    rosThread->requestHeatmap(currentSessionId_,
+                              ssid,
+                              filterThrEnable_,
+                              filterThrRssi_,
+                              queryLimit_,
+                              queryOffset_);
+}
+
+void MainWindow::onHeatmapReplyArrived(bool ok,
+                                       const QString& message,
+                                       const QString& session_id,
+                                       const QString& ssid,
+                                       bool thr_enable,
+                                       int thr_rssi,
+                                       const QVector<double>& xs,
+                                       const QVector<double>& ys,
+                                       const QVector<int>& rssis,
+                                       const QVector<QString>& /*ssids*/,
+                                       const QVector<QString>& /*stamps*/)
+{
+    Q_UNUSED(session_id);
+    Q_UNUSED(ssid);
+    Q_UNUSED(thr_enable);
+    Q_UNUSED(thr_rssi);
+
+    if (!ok) {
+        statusBar()->showMessage("Heatmap load failed: " + message);
+        return;
+    }
+
+    // query heatmap rebuild
+    if (!queryMapper_) return;
+    queryCanvas_.fill(Qt::transparent);
+
+    const int n = qMin(xs.size(), ys.size());
+    for (int i=0; i<n; ++i) {
+        int px=0, py=0;
+        if (!meterToPixel(xs[i], ys[i], px, py)) continue;
+        queryMapper_->addPoint(px + 1, py + 1, rssiToIntensity01((float)rssis[i]));
+    }
+
+    flushQueryHeatmap();
+    if (queryHeatItem) queryHeatItem->setVisible(true);
+
+    applyLayersPolicy();
+    statusBar()->showMessage(QString("Loaded past heatmap: %1 points (%2)")
+                                 .arg(n).arg(message));
+}
+
+// ======================
+// policy: Query 우선 / 아니면 Live
+// ======================
+void MainWindow::applyLayersPolicy()
+{
+    const bool showHeat = (ui->chkShowHeatmap ? ui->chkShowHeatmap->isChecked() : true);
+
+    if (liveHeatItem)  liveHeatItem->setVisible(false);
+    if (queryHeatItem) queryHeatItem->setVisible(false);
+
+    if (!showHeat) return;
+
+    const bool queryCtx = !currentSessionId_.isEmpty();
+    if (queryCtx) {
+        if (queryHeatItem) queryHeatItem->setVisible(true);
+        return;
+    }
+    if (liveHeatItem) liveHeatItem->setVisible(true);
+}
+
+// ======================
+// click -> nav goal
+// ======================
 bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
 {
     if (obj == ui->graphicsView->viewport() &&
@@ -577,525 +546,14 @@ bool MainWindow::eventFilter(QObject* obj, QEvent* ev)
         auto* me = static_cast<QMouseEvent*>(ev);
         const QPointF scenePos = ui->graphicsView->mapToScene(me->pos());
 
-        const bool simCtx = ui->chkSimEnable->isChecked();
-        const bool simGesture =
-            (me->button() == Qt::RightButton) ||
-            (me->button() == Qt::LeftButton && (me->modifiers() & Qt::ShiftModifier));
+        int px=0, py=0;
+        if (!sceneToMapPixel(scenePos, px, py)) return true;
 
-        if (simCtx && simGesture) {
-            int px=0, py=0;
-            if (!sceneToMapPixel(scenePos, px, py)) return true;
+        double x_m=0.0, y_m=0.0;
+        if (!pixelToMap(px, py, x_m, y_m)) return true;
 
-            double x_m=0.0, y_m=0.0;
-            if (!pixelToMap(px, py, x_m, y_m)) return true;
-
-            addSimPinAt(x_m, y_m);
-            return true;
-        }
-
-        onMapClicked(scenePos);
+        if (rosThread) rosThread->requestNavigateTo(x_m, y_m, 0.0);
         return true;
     }
     return false;
-}
-
-void MainWindow::onMapClicked(const QPointF& scenePos)
-{
-    int px=0, py=0;
-    if (!sceneToMapPixel(scenePos, px, py)) return;
-
-    double x_m=0.0, y_m=0.0;
-    if (!pixelToMap(px, py, x_m, y_m)) return;
-
-    rosThread->requestNavigateTo(x_m, y_m, 0.0);
-}
-
-// ======================
-// Layer toggles
-// ======================
-void MainWindow::onLayerHeatmap(bool)
-{
-    updateUiByContext();
-}
-
-void MainWindow::onLayerRobot(bool)
-{
-    if (robotItem)
-        robotItem->setVisible(ui->chkShowRobot->isChecked() && poseReady_);
-}
-
-void MainWindow::onLayerPins(bool on)
-{
-    for (auto* pin : apPins_) {
-        if (pin) pin->setVisible(on);
-    }
-}
-
-// ======================
-// AutoExplore
-// ======================
-void MainWindow::onAutoExploreToggled(bool on)
-{
-    autoExplorer_.setMapBounds(-3.0, 3.0, -3.0, 3.0);
-    autoExplorer_.setEnabled(on);
-    statusBar()->showMessage(QString("Auto Explore %1").arg(on ? "ON" : "OFF"));
-}
-
-// ======================
-// Snapshot helpers
-// ======================
-QString MainWindow::makeDbSnapshot()
-{
-    QDir().mkpath(snapshotDir_);
-
-    if (!QFile::exists(sourceDbPath_)) {
-        statusBar()->showMessage("Snapshot failed: source DB not found");
-        return {};
-    }
-
-    const QString dst = snapshotDir_ + "/snap_" +
-                        QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss") + ".db";
-
-    if (QFile::exists(dst)) QFile::remove(dst);
-
-    if (!QFile::copy(sourceDbPath_, dst)) {
-        statusBar()->showMessage("Snapshot failed: copy error");
-        return {};
-    }
-
-    return dst;
-}
-
-void MainWindow::updateSsidComboLive(const QString& ssid)
-{
-    if (!ui->cbSsid) return;
-    if (ssid.isEmpty()) return;
-    if (ssidSetLive_.contains(ssid)) return;
-
-    ssidSetLive_.insert(ssid);
-    ui->cbSsid->addItem(ssid);
-}
-
-// ======================
-// Sessions (Snapshot list)
-// ======================
-void MainWindow::onSessionRefresh()
-{
-    ui->cbSessionId->clear();
-
-    QDir dir(snapshotDir_);
-    if (!dir.exists()) {
-        ui->cbSessionId->addItem("(no snapshots yet)");
-        statusBar()->showMessage("Snapshots: 0");
-        return;
-    }
-
-    QStringList files = dir.entryList(QStringList() << "*.db", QDir::Files, QDir::Time);
-    if (files.isEmpty()) {
-        ui->cbSessionId->addItem("(no snapshots yet)");
-        statusBar()->showMessage("Snapshots: 0");
-        return;
-    }
-
-    for (const auto& f : files) {
-        const QString full = dir.absoluteFilePath(f);
-        ui->cbSessionId->addItem(f, full); // userData = full path
-    }
-
-    statusBar()->showMessage(QString("Snapshots: %1").arg(ui->cbSessionId->count()));
-}
-
-void MainWindow::onSessionLoad()
-{
-    const QString snapPath = ui->cbSessionId->currentData().toString();
-    if (snapPath.isEmpty() || !QFile::exists(snapPath)) {
-        statusBar()->showMessage("Load failed: snapshot not found");
-        return;
-    }
-
-    loadedSnapshotPath_ = snapPath;
-    reloadQueryLayerFromSnapshot(snapPath);
-    updateUiByContext();
-}
-
-void MainWindow::onSessionDelete()
-{
-    const QString snapPath = ui->cbSessionId->currentData().toString();
-    if (snapPath.isEmpty()) return;
-
-    if (loadedSnapshotPath_ == snapPath) {
-        onQueryClear();
-        loadedSnapshotPath_.clear();
-    }
-
-    QFile::remove(snapPath);
-    onSessionRefresh();
-    updateUiByContext();
-}
-
-// 오토슬롯
-void MainWindow::on_btnSessionLoad_clicked()
-{
-    onSessionLoad();
-}
-
-void MainWindow::onQueryClear()
-{
-    if (queryLayer_.isReady()) {
-        queryLayer_.clear(true);
-        queryLayer_.flush();
-        queryLayer_.setVisible(false);
-    }
-    loadedSnapshotPath_.clear();
-    updateUiByContext();
-}
-
-// ======================
-// Measure: Start/Stop (Live 누적 + Start 시 snapshot 생성)
-// ======================
-void MainWindow::onMeasureStart()
-{
-    if (accumulating_) return;
-    accumulating_ = true;
-
-    // Start 시점 스냅샷 1개 자동 생성(원본 DB는 절대 open하지 않음)
-    const QString snap = makeDbSnapshot();
-    if (!snap.isEmpty()) {
-        onSessionRefresh();
-        for (int i = 0; i < ui->cbSessionId->count(); ++i) {
-            if (ui->cbSessionId->itemData(i).toString() == snap) {
-                ui->cbSessionId->setCurrentIndex(i);
-                break;
-            }
-        }
-    }
-
-    updateUiByContext();
-}
-
-void MainWindow::onMeasureStop()
-{
-    if (!accumulating_) return;
-    accumulating_ = false;
-    updateUiByContext();
-}
-
-// ======================
-// Filter
-// ======================
-void MainWindow::onApplyFilter()
-{
-    filterSsid_ = ui->cbSsid ? ui->cbSsid->currentText() : "ALL";
-
-    // chkThrEnable은 UI에서 숨김/비활성이라 사실상 항상 true로 쓰는 게 UX상 자연스럽습니다.
-    filterThrEnable_ = true;
-
-    // "-70 dBm" -> toInt() 하면 -70 파싱됨
-    filterThrRssi_ = ui->cbThr ? ui->cbThr->currentText().toInt() : -70;
-
-    if (!loadedSnapshotPath_.isEmpty()) {
-        reloadQueryLayerFromSnapshot(loadedSnapshotPath_);
-    }
-    updateUiByContext();
-}
-
-// ======================
-// Query (Snapshot DB SELECT only)
-// ======================
-void MainWindow::reloadQueryLayerFromSnapshot(const QString& snapshotPath)
-{
-    if (!mapReady_) return;
-
-    // 겹침/착시 방지: query 갱신 중 live 잠시 끄기
-    if (heatItem_) heatItem_->setVisible(false);
-
-    if (queryLayer_.isReady()) {
-        queryLayer_.clear(true);
-        queryLayer_.flush();
-        queryLayer_.setVisible(false);
-    }
-
-    sqlite3* db = nullptr;
-    if (sqlite3_open_v2(snapshotPath.toStdString().c_str(),
-                        &db, SQLITE_OPEN_READONLY, nullptr) != SQLITE_OK) {
-        statusBar()->showMessage("Snapshot open failed");
-        if (db) sqlite3_close(db);
-        return;
-    }
-
-    QString sql = "SELECT ssid, grid_id_x, grid_id_y, rssi_value FROM wifi_data WHERE 1=1";
-    if (!filterSsid_.isEmpty() && filterSsid_ != "ALL") {
-        sql += " AND ssid = ?";
-    }
-    if (filterThrEnable_) {
-        sql += " AND rssi_value >= ?";
-    }
-    sql += " ORDER BY id ASC;";
-
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2(db, sql.toStdString().c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
-        statusBar()->showMessage("Snapshot query prepare failed");
-        sqlite3_close(db);
-        return;
-    }
-
-    int idx = 1;
-    if (!filterSsid_.isEmpty() && filterSsid_ != "ALL") {
-        sqlite3_bind_text(stmt, idx++, filterSsid_.toStdString().c_str(), -1, SQLITE_TRANSIENT);
-    }
-    if (filterThrEnable_) {
-        sqlite3_bind_double(stmt, idx++, (double)filterThrRssi_);
-    }
-
-    int count = 0;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        const double x_m  = sqlite3_column_double(stmt, 1);
-        const double y_m  = sqlite3_column_double(stmt, 2);
-        const double rssi = sqlite3_column_double(stmt, 3);
-
-        int px=0, py=0;
-        if (!meterToPixel(x_m, y_m, px, py)) continue;
-
-        queryLayer_.addPoint(px + 1, py + 1, rssiToIntensity01((float)rssi));
-        ++count;
-    }
-
-    sqlite3_finalize(stmt);
-    sqlite3_close(db);
-
-    queryLayer_.flush();
-    queryLayer_.setVisible(true);
-
-    statusBar()->showMessage(QString("Loaded %1 rows from snapshot").arg(count));
-}
-
-// ======================
-// Sim
-// ======================
-float MainWindow::simRssiAt(double d_m) const
-{
-    const double tx = simTxPower_;
-    const double rssi = tx - 20.0 * std::log10(d_m + 1.0);
-    return static_cast<float>(rssi);
-}
-
-void MainWindow::addSimPinAt(double x_m, double y_m)
-{
-    simPins_.push_back({x_m, y_m});
-
-    int px=0, py=0;
-    if (meterToPixel(x_m, y_m, px, py)) {
-        auto* pin = scene->addEllipse(-4, -4, 8, 8, QPen(Qt::blue), QBrush(Qt::blue));
-        pin->setPos(QPointF(px, py));
-        pin->setZValue(20);
-        pin->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
-        pin->setVisible(ui->chkShowApPins->isChecked());
-        apPins_.push_back(pin);
-    }
-
-    rebuildSimLayer();
-    updateUiByContext();
-}
-
-void MainWindow::rebuildSimLayer()
-{
-    if (!mapReady_ || !simLayer_.isReady()) return;
-
-    simLayer_.clear(true);
-
-    for (const auto& pin : simPins_) {
-        int px=0, py=0;
-        if (!meterToPixel(pin.x_m, pin.y_m, px, py)) continue;
-
-        const float inten = rssiToIntensity01(static_cast<float>(simTxPower_));
-        simLayer_.addPoint(px + 1, py + 1, inten);
-    }
-
-    simLayer_.flush();
-}
-
-void MainWindow::onSimEnable(bool on)
-{
-    simEnabled_ = on;
-
-    if (!on) {
-        if (simLayer_.isReady()) simLayer_.setVisible(false);
-        updateUiByContext();
-        return;
-    }
-
-    if (!simPins_.isEmpty()) rebuildSimLayer();
-    updateUiByContext();
-}
-
-void MainWindow::onClearPins()
-{
-    for (auto* it : apPins_) {
-        if (!it) continue;
-        scene->removeItem(it);
-        delete it;
-    }
-    apPins_.clear();
-
-    simPins_.clear();
-
-    if (simLayer_.isReady()) {
-        simLayer_.clear(true);
-        simLayer_.flush();
-        simLayer_.setVisible(false);
-    }
-
-    updateUiByContext();
-}
-
-// Layer policy: Sim > Query > Live
-void MainWindow::applyLayersPolicy()
-{
-    const bool showHeat = ui->chkShowHeatmap->isChecked();
-
-    if (heatItem_) heatItem_->setVisible(false);
-    if (queryLayer_.isReady()) queryLayer_.setVisible(false);
-    if (simLayer_.isReady())   simLayer_.setVisible(false);
-
-    if (!showHeat) return;
-
-    const bool simCtx   = ui->chkSimEnable->isChecked();
-    const bool queryCtx = !loadedSnapshotPath_.isEmpty();
-
-    if (simCtx && simEnabled_ && !simPins_.isEmpty() && simLayer_.isReady()) {
-        simLayer_.setVisible(true);
-        return;
-    }
-
-    if (queryCtx && queryLayer_.isReady()) {
-        queryLayer_.setVisible(true);
-        return;
-    }
-
-    if (heatItem_) heatItem_->setVisible(true);
-}
-
-// ======================
-// Legend overlay
-// ======================
-void MainWindow::initLegendOverlay()
-{
-    if (!ui->graphicsView) return;
-    if (legendOverlay_) return;
-
-    legendOverlay_ = new LegendBarWidget(ui->graphicsView->viewport());
-    legendOverlay_->setRangeDbm(-80, 0);
-    legendOverlay_->setTitle("Voice + Data | dBm");
-    legendOverlay_->setValueDbm(-67);
-
-    legendOverlay_->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    legendOverlay_->setStyleSheet("background: transparent;");
-    legendOverlay_->setFixedSize(360, 64);
-
-    updateLegendOverlayGeometry();
-    legendOverlay_->show();
-}
-
-void MainWindow::updateLegendOverlayGeometry()
-{
-    if (!legendOverlay_ || !ui->graphicsView) return;
-
-    const int margin = 12;
-    const QRect vp = ui->graphicsView->viewport()->rect();
-
-    const int w = legendOverlay_->width();
-    const int h = legendOverlay_->height();
-
-    const int x = vp.right() - w - margin;
-    const int y = vp.bottom() - h - margin;
-
-    legendOverlay_->move(x, y);
-}
-
-// 25cm live 반경
-int MainWindow::radiusPxLive() const
-{
-    const double r_m = 0.25;
-    return qMax(1, int(std::round(r_m / mapMeta_.resolution)));
-}
-
-int MainWindow::simBrushRadiusPx() const
-{
-    int rpx = 10;
-    switch (simBandwidth_) {
-    case 20:  rpx = 6;  break;
-    case 40:  rpx = 8;  break;
-    case 80:  rpx = 10; break;
-    case 160: rpx = 12; break;
-    default:  rpx = 10; break;
-    }
-    return qMax(6, rpx);
-}
-
-void MainWindow::onSimParamsChanged()
-{
-    simTxPower_   = ui->spTxPower->value();
-    simChannel_   = ui->spSimChannel->value();
-    simBandwidth_ = ui->cbSimBandwidth->currentText().toInt();
-
-    if (simLayer_.isReady()) {
-        simLayer_.resetBrush(simBrushRadiusPx(), 200);
-        rebuildSimLayer();
-    }
-
-    if (ui->chkSimEnable->isChecked() && !simPins_.isEmpty()) {
-        rebuildSimLayer();
-    }
-
-    updateUiByContext();
-}
-
-void MainWindow::onAdminClicked()
-{
-    statusBar()->showMessage("Admin disabled: Qt does not open DB directly.");
-}
-
-// ======================
-// Live fused sample
-// ======================
-void MainWindow::onFusedSample(double x_m, double y_m, const QString& ssid, int rssi)
-{
-    if (!mapReady_ || !heatMapper_ || mapImageSize_.isEmpty()) return;
-
-    // SSID 리스트 실시간 갱신
-    updateSsidComboLive(ssid);
-
-    // Start/Stop 정책: Start(누적 ON)에서만 live heatmap 누적
-    if (!accumulating_) return;
-
-    // 필터 적용 (Live에도 동일 적용)
-    if (!filterSsid_.isEmpty() && filterSsid_ != "ALL" && ssid != filterSsid_) return;
-    if (filterThrEnable_ && rssi < filterThrRssi_) return;
-
-    int px=0, py=0;
-    if (!meterToPixel(x_m, y_m, px, py)) return;
-
-    heatMapper_->addPoint(px + 1, py + 1, rssiToIntensity01((float)rssi));
-}
-
-// gridPose는 현재 구현이 "픽셀 좌표" 가정이라, 실제로 쓰지 않는다면 호출 안 해도 됩니다.
-void MainWindow::onGridPose(double gx, double gy)
-{
-    if (!mapReady_ || mapImageSize_.isEmpty() || !robotItem) return;
-
-    int px = (int)std::lround(gx);
-    int gy_i = (int)std::lround(gy);
-    int py = (mapImageSize_.height() - 1) - gy_i;
-
-    if (px < 0 || py < 0 || px >= mapImageSize_.width() || py >= mapImageSize_.height())
-        return;
-
-    robotItem->setPos(QPointF(px, py));
-    poseReady_ = true;
-    robotItem->setVisible(ui->chkShowRobot->isChecked());
-}
-
-void MainWindow::onRlStateArrived()
-{
-    statusBar()->showMessage("RL state arrived");
 }
