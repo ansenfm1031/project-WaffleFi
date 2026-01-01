@@ -320,23 +320,111 @@ void MainWindow::applyViewTransform()
     if (scene->sceneRect().isEmpty()) return;
 
     auto* v = ui->graphicsView;
-
-    v->setTransformationAnchor(QGraphicsView::AnchorViewCenter);
-    v->setResizeAnchor(QGraphicsView::AnchorViewCenter);
     v->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     v->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     v->setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-    v->resetTransform();
-    v->fitInView(scene->sceneRect(), Qt::KeepAspectRatio);
+    const QRectF sr = scene->sceneRect();
+    const QPointF sc = sr.center();
+    const QRect vp = v->viewport()->rect();
+    if (vp.width() <= 1 || vp.height() <= 1) return;
 
-    // 기존 프로젝트 정책(회전 -90)
-    QTransform t = v->transform();
-    t.rotate(-90.0);
+    const double rotDeg = -180.0; //  오른쪽 180도 유지
+
+    const double w = sr.width();
+    const double h = sr.height();
+    const double rad = rotDeg * M_PI / 180.0;
+    const double c = std::abs(std::cos(rad));
+    const double s = std::abs(std::sin(rad));
+    const double bboxW = c*w + s*h;
+    const double bboxH = s*w + c*h;
+
+    //  "전체가 보이도록" (스크롤 X, 잘림 X)
+    const double sx = double(vp.width())  / bboxW;
+    const double sy = double(vp.height()) / bboxH;
+    const double scale = std::min(sx, sy);
+    // const double scale = std::max(sx, sy); //  화면 꽉 채움(잘림 가능)
+
+
+    QTransform t;
+    t.translate(vp.width()*0.5, vp.height()*0.5);
+    t.scale(scale, scale);
+    t.rotate(rotDeg);
+    t.translate(-sc.x(), -sc.y());
+
     v->setTransform(t, false);
-
-    v->centerOn(scene->sceneRect().center());
 }
+
+
+
+// void MainWindow::applyViewTransform()
+// {
+//     if (!ui->graphicsView || !scene) return;
+//     if (scene->sceneRect().isEmpty()) return;
+
+//     auto* v = ui->graphicsView;
+
+//     v->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+//     v->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+//     v->setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+//     const QRectF sr = scene->sceneRect();
+//     const QPointF sc = sr.center();
+//     const QRect vp = v->viewport()->rect();
+
+//     if (vp.width() <= 1 || vp.height() <= 1) return;
+
+//     //  오른쪽 180도
+//     const double rotDeg = -180.0;
+
+//     const double w = sr.width();
+//     const double h = sr.height();
+//     const double rad = rotDeg * M_PI / 180.0;
+//     const double c = std::abs(std::cos(rad));
+//     const double s = std::abs(std::sin(rad));
+
+//     const double bboxW = c*w + s*h;
+//     const double bboxH = s*w + c*h;
+
+//     // 가로 꽉 채우기
+//     const double scale = (bboxW > 1e-6)
+//                              ? double(vp.width()) / bboxW
+//                              : 1.0;
+
+//     QTransform t;
+//     t.translate(vp.width() * 0.5, vp.height() * 0.5);
+//     t.scale(scale, scale);
+//     t.rotate(rotDeg);
+//     t.translate(-sc.x(), -sc.y());
+
+//     v->setTransform(t, false);
+// }
+
+
+
+// void MainWindow::()
+// {
+//     if (!ui->graphicsView || !scene) return;
+//     if (scene->sceneRect().isEmpty()) return;
+
+//     auto* v = ui->graphicsView;
+
+//     v->setTransformationAnchor(QGraphicsView::AnchorViewCenter);
+//     v->setResizeAnchor(QGraphicsView::AnchorViewCenter);
+//     v->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+//     v->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+//     v->setRenderHint(QPainter::SmoothPixmapTransform, true);
+
+//     v->resetTransform();
+//     v->fitInView(scene->sceneRect(), Qt::KeepAspectRatio);
+
+//     // 기존 프로젝트 정책(회전 -90)
+//     QTransform t = v->transform();
+//     t.rotate(-90.0);
+//     v->setTransform(t, false);
+
+//     v->centerOn(scene->sceneRect().center());
+// }
 
 // ======================
 // Coordinate transforms
@@ -495,7 +583,9 @@ void MainWindow::onRobotPose(double x, double y, double yaw)
     if (!meterToPixel(x, y, px, py)) return;
 
     robotItem->setPos(QPointF(px, py));
-    robotItem->setRotation(-rad2deg(yaw));
+
+    //  180도 회전 보정
+    robotItem->setRotation(viewRotateDeg_ - rad2deg(yaw));
 
     if (!poseReady_) {
         poseReady_ = true;

@@ -77,6 +77,7 @@ private slots:
     QString currentSessionIdText() const;
 
 private:
+    double viewRotateDeg_ = -180.0;
     bool simEnable_ = false;
     double simTxPower_ = -40.0;
     int simChannel_ = 36;
