@@ -1,0 +1,9 @@
+uint32 limit
+uint32 offset
+---
+bool ok
+string message
+string[] session_ids
+string[] started_at
+string[] ended_at
+
