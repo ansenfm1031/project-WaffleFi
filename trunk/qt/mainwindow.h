@@ -78,6 +78,11 @@ private slots:
     void onClearPinsClicked();
 
 private:
+    //legendbar
+    bool   legendEmaInit_ = false;
+    double legendEma_     = -70.0;
+
+
     double viewRotateDeg_ = -180.0;
     bool simEnable_ = false;
     double simTxPower_ = -40.0;

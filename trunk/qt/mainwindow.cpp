@@ -593,41 +593,14 @@ void MainWindow::onFusedSample(double x_m, double y_m, const QString& ssid, int 
     if (filterThrEnable_ && rssi < filterThrRssi_) return;
 
     addLivePointMean(x_m, y_m, rssi);
+
+    const double alpha = 0.2; // 0.1~0.3 사이 추천
+    if (!legendEmaInit_) { legendEma_ = rssi; legendEmaInit_ = true; }
+    else                 { legendEma_ = alpha * rssi + (1.0 - alpha) * legendEma_; }
+
+    if (legendOverlay_) legendOverlay_->setValueDbm(legendEma_);
 }
 
-// ======================
-// Session Start/Stop (Trigger)
-// ======================
-// void MainWindow::onMeasureToggle()
-// {
-//     if (!rosThread) return;
-
-//     // Start
-//     if (!accumulating_) {
-//         if (sessionPending_) return;
-//         sessionPending_ = true;
-
-//         //  즉시 UI를 Stop 상태처럼 보이게
-//         startOptimistic_ = true;
-//         if (ui->btnMeasureStart) {
-//             ui->btnMeasureStart->setText("Stop");
-//             ui->btnMeasureStart->setEnabled(false); // 응답 올 때까지 잠깐 잠금
-//         }
-//         statusBar()->showMessage("Starting session...");
-
-//         rosThread->requestStartSession();
-//         return;
-//     }
-
-//     // Stop
-//     accumulating_ = false;
-//     startOptimistic_ = false;
-//     updateUiByContext();
-//     applyLayersPolicy();
-
-//     rosThread->requestStopSession();
-//     statusBar()->showMessage("Stopping session...");
-// }
 void MainWindow::onMeasureToggle()
 {
     if (!rosThread || !ui->btnMeasureStart) return;
@@ -1248,33 +1221,6 @@ void MainWindow::onDeleteSessionReply(bool ok,
 
     statusBar()->showMessage("Deleted: " + deleted_sid, 2000);
 }
-
-// void MainWindow::addSimPinAt(int px, int py)
-// {
-//     if (!scene) return;
-
-//     // 1) pin
-//     auto* pin = scene->addEllipse(-4, -4, 8, 8, QPen(Qt::blue), QBrush(Qt::blue));
-//     pin->setPos(px, py);
-//     pin->setZValue(20);
-//     pin->setFlag(QGraphicsItem::ItemIgnoresTransformations, true);
-//     pin->setFlag(QGraphicsItem::ItemIsMovable, true);
-
-//     // 2) sim heat
-//     if (!mapReady_) return;
-
-//     // bandwidth가 아직 simLayer에 반영 안 됐을 수 있으니 한 번 보장
-//     applySimBandwidthToLayer();
-
-//     if (!simLayer_.isReady()) return;
-
-//     const float intensity = 1.0f; // 일단 최대로 (원하면 TxPower로 변환 가능)
-//     simLayer_.addPointMean(px + 1, py + 1, intensity);
-//     simLayer_.flushMean();
-
-//     applyLayersPolicy(); // simEnable + heat 체크 상태에 따라 보이게
-// }
-
 
 void MainWindow::addSimPinAt(int px, int py)
 {
