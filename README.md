@@ -16,7 +16,7 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
 
 ---
 ## 🏗️ 프로젝트 아키텍처
-<img width="1020" height="519" alt="image" src="https://github.com/user-attachments/assets/f30c6edd-5e92-4fc1-b3b8-d52a23c6dde4" />  
+<img width="800" alt="image" src="docs/images/architecture_001.png" />  
 
 ### 🔧 Hardware & Sensor
 
@@ -44,7 +44,7 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
 ---
 ## ⚙️ 주요 기능 상세
 ### 🤖 Reinforcement Learning
-<img width="588" height="392" alt="image" src="https://github.com/user-attachments/assets/61ff6297-84c2-4cb0-837a-e19bbf32b6dc" />
+<img width="600" alt="image" src="docs/images/rl_concept_001.png" />
 
 **강화학습 개념**
 - Q 라는 이름의 로봇에게 매 선택 시 조언 → 좋은 결과가 나오면 보상, 나쁜 결과가 나오면 벌점을 부여하여 학습
@@ -60,7 +60,7 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
 - PER (Prioritized Experience Replay) : Replay Buffer에서 중요한 경험에 우선순위
 - PPO (Proximal Policy Optimization) : Policy-Based / Q-Learning 계열이 행동을 학습하고 이산적인 행동을 가지는 것에 대비하여 정책을 학습하고 연속적인 행동 공간을 가짐
 
-<img width="1020" height="519" alt="image" src="https://github.com/user-attachments/assets/b68eff70-8657-445d-8a97-3e2e8a901a85" />
+<img width="800" alt="image" src="docs/images/rl_training_001.png" />
 
 **강화학습 기반 커버리지 탐색**  
 -	새로운 공간 탐색 시 보상 증가  
@@ -81,14 +81,14 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
 
 ---
 ### 🔌Wi-Fi RSSI (ESP32)
-<img width="1020" height="519" alt="image" src="https://github.com/user-attachments/assets/a5b42a23-405d-468e-9c96-be3acc9493d4" />  
+<img width="800" alt="image" src="docs/images/esp32_001.png" />  
 
 **주변 Wi-Fi AP 스캔 및 RSSI 측정**   
   - Wi-Fi Scan → SSID / RSSI → UART 전송  
 
 ---
 ### 🧩 ROS2 Node Structure
-<img width="1020" height="720" alt="image" src="https://github.com/user-attachments/assets/2796353a-dcfc-4d14-a2e3-25cd5084b916" />
+<img width="800" alt="image" src="docs/images/ros_001.png" />
 
 **로봇 주행, 센서 데이터 통합**  
 - Turtlebot3 제어
@@ -106,7 +106,7 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
 
 ---
 ### 🖥️ Qt GUI
-<img width="1020" height="720" alt="image" src="https://github.com/user-attachments/assets/1a2c0731-04b6-4e26-893a-b1c5a91e53c1" />
+<img width="800" alt="image" src="docs/images/qt_001.png" />
 
 **사용자 인터페이스 및 히트맵 시각화**  
 - 세션 기반 데이터 관리
