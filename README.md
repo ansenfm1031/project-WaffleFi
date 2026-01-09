@@ -43,14 +43,23 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
 
 ---
 ## ⚙️ 주요 기능 상세
-### 🔌Wi-Fi RSSI (ESP32)
-<img width="1020" height="519" alt="image" src="https://github.com/user-attachments/assets/a5b42a23-405d-468e-9c96-be3acc9493d4" />  
-
-**주변 Wi-Fi AP 스캔 및 RSSI 측정**   
-  - Wi-Fi Scan → SSID / RSSI → UART 전송  
-
----
 ### 🤖 Reinforcement Learning
+<img width="588" height="392" alt="image" src="https://github.com/user-attachments/assets/61ff6297-84c2-4cb0-837a-e19bbf32b6dc" />
+
+**강화학습 개념**
+- Q 라는 이름의 로봇에게 매 선택 시 조언 → 좋은 결과가 나오면 보상, 나쁜 결과가 나오면 벌점을 부여하여 학습
+
+**주요 용어**
+- Q : 각 행동의 누적 보상 기대값 (점수)
+- Epsilon : 탐험 비율 파라미터 (0.0 ~ 1.0)
+- Replay Buffer : 연속된 행동은 강한 상관 관계를 가지기 때문에 버퍼에서 랜덤하게 샘플링해서 학습
+
+**주요 학습 알고리즘**
+- DQN : DNN + Q Learning
+- DDQN (Double DQN) : 선택 network와 평가 network를 분리하여 과대추정(overestimation) 방지
+- PER (Prioritized Experience Replay) : Replay Buffer에서 중요한 경험에 우선순위
+- PPO (Proximal Policy Optimization) : Policy-Based / Q-Learning 계열이 행동을 학습하고 이산적인 행동을 가지는 것에 대비하여 정책을 학습하고 연속적인 행동 공간을 가짐
+
 <img width="1020" height="519" alt="image" src="https://github.com/user-attachments/assets/b68eff70-8657-445d-8a97-3e2e8a901a85" />
 
 **강화학습 기반 커버리지 탐색**  
@@ -69,6 +78,14 @@ WAFFLE-FI는 **강화학습 기반 커버리지 탐색 로봇**을 이용해 **�
     - Avg Reward: 144.57
     - Avg New Cell: 73.36
     - Turn Ratio: 0.3 ± 0.1
+
+---
+### 🔌Wi-Fi RSSI (ESP32)
+<img width="1020" height="519" alt="image" src="https://github.com/user-attachments/assets/a5b42a23-405d-468e-9c96-be3acc9493d4" />  
+
+**주변 Wi-Fi AP 스캔 및 RSSI 측정**   
+  - Wi-Fi Scan → SSID / RSSI → UART 전송  
+
 ---
 ### 🧩 ROS2 Node Structure
 <img width="1020" height="720" alt="image" src="https://github.com/user-attachments/assets/2796353a-dcfc-4d14-a2e3-25cd5084b916" />
